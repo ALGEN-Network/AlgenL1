@@ -1,5 +1,5 @@
 use git_version::git_version;
-use target_info::Target;
+use std::env::consts;
 
 /// Returns the current version of this build of Lighthouse.
 ///
@@ -17,8 +17,8 @@ pub const VERSION: &str = git_version!(
         // NOTE: using --match instead of --exclude for compatibility with old Git
         "--match=thiswillnevermatchlol"
     ],
-    prefix = "Lighthouse/v6.0.1-",
-    fallback = "Lighthouse/v6.0.1"
+    prefix = "Lighthouse/v8.0.1-",
+    fallback = "Lighthouse/v8.0.1"
 );
 
 /// Returns the first eight characters of the latest commit hash for this build.
@@ -45,7 +45,23 @@ pub const COMMIT_PREFIX: &str = git_version!(
 ///
 /// `Lighthouse/v1.5.1-67da032+/x86_64-linux`
 pub fn version_with_platform() -> String {
-    format!("{}/{}-{}", VERSION, Target::arch(), Target::os())
+    format!("{}/{}-{}", VERSION, consts::ARCH, consts::OS)
+}
+
+/// Returns semantic versioning information only.
+///
+/// ## Example
+///
+/// `1.5.1`
+pub fn version() -> &'static str {
+    "8.0.1"
+}
+
+/// Returns the name of the current client running.
+///
+/// This will usually be "Lighthouse"
+pub fn client_name() -> &'static str {
+    "Lighthouse"
 }
 
 #[cfg(test)]
@@ -55,13 +71,24 @@ mod test {
 
     #[test]
     fn version_formatting() {
-        let re =
-            Regex::new(r"^Lighthouse/v[0-9]+\.[0-9]+\.[0-9]+(-rc.[0-9])?(-[[:xdigit:]]{7})?\+?$")
-                .unwrap();
+        let re = Regex::new(
+            r"^Lighthouse/v[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta).[0-9])?(-[[:xdigit:]]{7})?\+?$",
+        )
+        .unwrap();
         assert!(
             re.is_match(VERSION),
             "version doesn't match regex: {}",
             VERSION
+        );
+    }
+
+    #[test]
+    fn semantic_version_formatting() {
+        let re = Regex::new(r"^[0-9]+\.[0-9]+\.[0-9]+").unwrap();
+        assert!(
+            re.is_match(version()),
+            "semantic version doesn't match regex: {}",
+            version()
         );
     }
 }

@@ -5,10 +5,10 @@ use crate::per_block_processing::errors::{
     DepositInvalid, HeaderInvalid, IndexedAttestationInvalid, IntoWithIndex,
     ProposerSlashingInvalid,
 };
-use crate::{per_block_processing, BlockReplayError, BlockReplayer};
+use crate::{BlockReplayError, BlockReplayer, per_block_processing};
 use crate::{
-    per_block_processing::{process_operations, verify_exit::verify_exit},
     BlockSignatureStrategy, ConsensusContext, VerifyBlockRoot, VerifySignatures,
+    per_block_processing::{process_operations, verify_exit::verify_exit},
 };
 use beacon_chain::test_utils::{BeaconChainHarness, EphemeralHarnessType};
 use ssz_types::Bitfield;
@@ -21,6 +21,9 @@ pub const NUM_DEPOSITS: u64 = 1;
 pub const VALIDATOR_COUNT: usize = 64;
 pub const EPOCH_OFFSET: u64 = 4;
 pub const NUM_ATTESTATIONS: u64 = 1;
+
+// When set to true, cache any states fetched from the db.
+pub const CACHE_STATE_IN_TESTS: bool = true;
 
 /// A cached set of keys.
 static KEYPAIRS: LazyLock<Vec<Keypair>> =
@@ -714,10 +717,10 @@ async fn invalid_attester_slashing_not_slashable() {
 
     let mut attester_slashing = harness.make_attester_slashing(vec![1, 2]);
     match &mut attester_slashing {
-        AttesterSlashing::Base(ref mut attester_slashing) => {
+        AttesterSlashing::Base(attester_slashing) => {
             attester_slashing.attestation_1 = attester_slashing.attestation_2.clone();
         }
-        AttesterSlashing::Electra(ref mut attester_slashing) => {
+        AttesterSlashing::Electra(attester_slashing) => {
             attester_slashing.attestation_1 = attester_slashing.attestation_2.clone();
         }
     }
@@ -749,10 +752,10 @@ async fn invalid_attester_slashing_1_invalid() {
 
     let mut attester_slashing = harness.make_attester_slashing(vec![1, 2]);
     match &mut attester_slashing {
-        AttesterSlashing::Base(ref mut attester_slashing) => {
+        AttesterSlashing::Base(attester_slashing) => {
             attester_slashing.attestation_1.attesting_indices = VariableList::from(vec![2, 1]);
         }
-        AttesterSlashing::Electra(ref mut attester_slashing) => {
+        AttesterSlashing::Electra(attester_slashing) => {
             attester_slashing.attestation_1.attesting_indices = VariableList::from(vec![2, 1]);
         }
     }
@@ -787,10 +790,10 @@ async fn invalid_attester_slashing_2_invalid() {
 
     let mut attester_slashing = harness.make_attester_slashing(vec![1, 2]);
     match &mut attester_slashing {
-        AttesterSlashing::Base(ref mut attester_slashing) => {
+        AttesterSlashing::Base(attester_slashing) => {
             attester_slashing.attestation_2.attesting_indices = VariableList::from(vec![2, 1]);
         }
-        AttesterSlashing::Electra(ref mut attester_slashing) => {
+        AttesterSlashing::Electra(attester_slashing) => {
             attester_slashing.attestation_2.attesting_indices = VariableList::from(vec![2, 1]);
         }
     }
@@ -903,7 +906,7 @@ async fn invalid_proposer_slashing_duplicate_slashing() {
     let mut ctxt = ConsensusContext::new(state.slot());
     let result_1 = process_operations::process_proposer_slashings(
         &mut state,
-        &[proposer_slashing.clone()],
+        std::slice::from_ref(&proposer_slashing),
         VerifySignatures::False,
         &mut ctxt,
         &spec,
@@ -912,7 +915,7 @@ async fn invalid_proposer_slashing_duplicate_slashing() {
 
     let result_2 = process_operations::process_proposer_slashings(
         &mut state,
-        &[proposer_slashing],
+        std::slice::from_ref(&proposer_slashing),
         VerifySignatures::False,
         &mut ctxt,
         &spec,
@@ -1114,9 +1117,10 @@ async fn block_replayer_peeking_state_roots() {
         .get_blinded_block(&parent_block_root)
         .unwrap()
         .unwrap();
+    // Cache the state to make CI go brr.
     let parent_state = harness
         .chain
-        .get_state(&parent_block.state_root(), Some(parent_block.slot()))
+        .get_state(&parent_block.state_root(), Some(parent_block.slot()), true)
         .unwrap()
         .unwrap();
 
