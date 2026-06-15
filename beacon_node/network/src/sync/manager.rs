@@ -784,6 +784,9 @@ impl<T: BeaconChainTypes> SyncManager<T> {
                 }
                 _ = register_metrics_interval.tick() => {
                     self.network.register_metrics();
+                    self.range_sync.register_metrics();
+                    self.backfill_sync.register_metrics();
+                    self.custody_backfill_sync.register_metrics();
                 }
                 _ = epoch_interval.tick() => {
                     self.update_sync_state();
@@ -871,20 +874,28 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             SyncMessage::UnknownParentDataColumn(peer_id, data_column) => {
                 let data_column_slot = data_column.slot();
                 let block_root = data_column.block_root();
-                let parent_root = data_column.block_parent_root();
-                debug!(%block_root, %parent_root, "Received unknown parent data column message");
-                self.handle_unknown_parent(
-                    peer_id,
-                    block_root,
-                    parent_root,
-                    data_column_slot,
-                    BlockComponent::DataColumn(DownloadResult {
-                        value: data_column,
-                        block_root,
-                        seen_timestamp: timestamp_now(),
-                        peer_group: PeerGroup::from_single(peer_id),
-                    }),
-                );
+                match data_column.as_ref() {
+                    DataColumnSidecar::Fulu(column) => {
+                        let parent_root = column.block_parent_root();
+                        debug!(%block_root, %parent_root, "Received unknown parent data column message");
+                        self.handle_unknown_parent(
+                            peer_id,
+                            block_root,
+                            parent_root,
+                            data_column_slot,
+                            BlockComponent::DataColumn(DownloadResult {
+                                value: data_column,
+                                block_root,
+                                seen_timestamp: timestamp_now(),
+                                peer_group: PeerGroup::from_single(peer_id),
+                            }),
+                        );
+                    }
+                    // TODO(gloas) support gloas data column variant
+                    DataColumnSidecar::Gloas(_) => {
+                        error!("Gloas variant not yet supported")
+                    }
+                }
             }
             SyncMessage::UnknownBlockHashFromAttestation(peer_id, block_root) => {
                 if !self.notified_unknown_roots.contains(&(peer_id, block_root)) {
